@@ -1,0 +1,86 @@
+% 支持向量机用于收盘价预测，首先是未优化的，其次
+%% 清空环境
+tic;clc;clear;close all;format compact
+%% 加载数据
+data=xlsread('EUA五分钟.xlsx','G2:G30763');
+% 归一化
+[a,inputns]=mapminmax(data',0,1);%归一化函数要求输入为行向量
+data_trans=data_process(5,a);%% 对时间序列预测建立滚动序列，即用1到m个数据预测第m+1个数据，然后用2到m+1个数据预测第m+2个数据
+input=data_trans(:,1:end-1);
+output=data_trans(:,end);
+%% 数据集 前75%训练 后25%预测
+m=round(size(data_trans,1)*0.75);
+Pn_train=input(1:m,:);
+Tn_train=output(1:m,:);
+Pn_test=input(m+1:end,:);
+Tn_test=output(m+1:end,:);
+
+%% 1.没有优化的SVM
+bestc=100;bestg=0.8;
+cmd = ['-s 3 -t 2 ','-c ', num2str(bestc), ' -g ', num2str(bestg) , ' -p 0.01'];
+model = svmtrain(Tn_train,Pn_train,cmd);%训练
+[predict,fit]= svmpredict(Tn_test,Pn_test,model);%测试
+
+predict0=mapminmax('reverse',predict',inputns);
+T_test=mapminmax('reverse',Tn_test',inputns);
+
+figure
+subplot(121)
+plot(predict0,'r-*')
+hold on
+plot(T_test,'b-o')
+xlabel('样本编号')
+ylabel('收盘价/元')
+title('SVM预测')
+legend('实际输出','期望输出')
+
+subplot(122)
+plot(abs(predict0-T_test)./T_test,'r-*')
+xlabel('样本编号')
+ylabel('收盘价相对误差/%')
+title('SVM预测')
+%% 2.设计PSO优化SVM，用于选择最佳的C和G
+[bestmse,bestc,bestg,trace] = psoSVMcgForRegress(Tn_train,Pn_train,Tn_test,Pn_test);
+
+figure;
+hold on;
+plot(trace,'r-');
+xlabel('进化代数','FontSize',12);
+ylabel('适应度','FontSize',12);
+title('适应度曲线/以训练集均方差作为适应度函数值')
+grid on;
+
+% 利用训练集参数进行SVM网络训练
+cmd = ['-s 3 -t 2 ','-c ', num2str(bestc), ' -g ', num2str(bestg) , ' -p 0.01'];
+model = svmtrain(Tn_train,Pn_train,cmd);%训练
+[predict,fit]= svmpredict(Tn_test,Pn_test,model);%测试
+predict1=mapminmax('reverse',predict',inputns);
+% 结果分析
+
+disp('显示结果')
+bestc 
+bestg 
+disp('优化前的均方差误差')
+mse_svm=mse(predict0-T_test)
+disp('优化后的均方差误差')
+mse_pso_svm=mse(predict1-T_test)
+%
+toc
+figure
+subplot(121)
+plot(predict1,'r-*')
+hold on
+plot(T_test,'b-o')
+xlabel('测试集样本编号')
+ylabel('收盘价')
+title('PSO-SVM预测')
+legend('实际输出','期望输出')
+
+
+subplot(122)
+plot(abs(predict1-T_test)./T_test,'r-*')
+
+xlabel('测试集样本编号')
+ylabel('收盘价相对误差')
+title('PSO=SVM预测的误差')
+legend('实际输出','期望输出')
